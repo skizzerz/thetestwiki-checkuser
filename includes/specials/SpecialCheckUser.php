@@ -33,6 +33,18 @@ class SpecialCheckUser extends SpecialPage {
 		return true; // logging
 	}
 
+	public function userCanExecute( User $user ) {
+		return MediaWikiServices::getInstance()
+			->getPermissionManager()
+			->userHasAnyRight( $user, $this->mRestriction, 'checkuser-limited' );
+	}
+
+	protected function hasFullAccess( User $user ) {
+		return MediaWikiServices::getInstance()
+			->getPermissionManager()
+			->userHasRight( $user, $this->mRestriction );
+	}
+
 	public function execute( $subpage ) {
 		$this->setHeaders();
 		$this->addHelpLink( 'Extension:CheckUser' );
@@ -97,6 +109,44 @@ class SpecialCheckUser extends SpecialPage {
 			$name = $user;
 		}
 
+		$cidr = false;
+		$notSelf = false;
+		if ( !$this->hasFullAccess( $this->getUser() ) ) {
+			$myIP = $this->getRequest()->getIP();
+			if ( $ip !== '' && $ip !== $myIP ) {
+				if ( !IPUtils::isValid( $ip ) ) {
+					// range
+					$cidr = true;
+				} else {
+					$notSelf = true;
+				}
+
+				$ip = '';
+			}
+
+			if ( $xff !== '' && $xff !== $myIP ) {
+				if ( !IPUtils::isValid( $xff ) ) {
+					// range
+					$cidr = true;
+				} else {
+					$notSelf = true;
+				}
+
+				$xff = '';
+			}
+
+			if ( $name !== '' && $name !== $this->getUser()->getName() ) {
+				$notSelf = true;
+				$name = '';
+			}
+
+			if ( $notSelf ) {
+				$this->getOutput()->addWikiMsg( 'checkuser-limited-notself' );
+			} elseif ( $cidr ) {
+				$this->getOutput()->addWikiMsg( 'checkuser-limited-nocidr' );
+			}
+		}
+
 		$this->showIntroductoryText();
 		$this->showForm( $user, $checktype, $ip, $xff, $name, $period );
 
@@ -108,7 +158,7 @@ class SpecialCheckUser extends SpecialPage {
 				$this->doMassUserBlock( $users, $blockParams, $tag, $talkTag );
 			} elseif ( !$this->checkReason() ) {
 				$out->addWikiMsg( 'checkuser-noreason' );
-			} elseif ( $checktype == 'subuserips' ) {
+			} elseif ( $name && $checktype == 'subuserips' ) {
 				$this->doUserIPsRequest( $name, $period );
 			} elseif ( $xff && $checktype == 'subedits' ) {
 				$this->doIPEditsRequest( $xff, true, $period );
@@ -118,23 +168,35 @@ class SpecialCheckUser extends SpecialPage {
 				$this->doUserEditsRequest( $user, $period );
 			} elseif ( $xff && $checktype == 'subipusers' ) {
 				$this->doIPUsersRequest( $xff, true, $period, $tag, $talkTag );
-			} elseif ( $checktype == 'subipusers' ) {
+			} elseif ( $ip && $checktype == 'subipusers' ) {
 				$this->doIPUsersRequest( $ip, false, $period, $tag, $talkTag );
 			}
 		}
 		// Add CIDR calculation convenience JS form
-		$this->addJsCIDRForm();
+		if ( $this->hasFullAccess( $this->getUser() ) ) {
+			$this->addJsCIDRForm();
+		}
+
 		$out->addModules( 'ext.checkUser' );
 		$out->addModuleStyles( 'mediawiki.interface.helpers.styles' );
 	}
 
 	protected function showIntroductoryText() {
-		$cidrLimit = $this->getConfig()->get( 'CheckUserCIDRLimit' );
-		$this->getOutput()->addWikiMsg(
-			'checkuser-summary',
-			$cidrLimit['IPv4'],
-			$cidrLimit['IPv6']
-		);
+		if ( $this->hasFullAccess( $this->getUser() ) ) {
+			$cidrLimit = $this->getConfig()->get( 'CheckUserCIDRLimit' );
+			$this->getOutput()->addWikiMsg(
+				'checkuser-summary',
+				$cidrLimit['IPv4'],
+				$cidrLimit['IPv6']
+			);
+		} else {
+			// limited users cannot use cidr or view the full log
+			$this->getOutput()->addWikiMsg(
+				'checkuser-summary-limited',
+				$this->getUser()->getName(),
+				$this->getRequest()->getIP()
+			);
+		}
 	}
 
 	/**
@@ -273,6 +335,11 @@ class SpecialCheckUser extends SpecialPage {
 			|| !$usersCount
 		) {
 			$this->getOutput()->addWikiMsg( 'checkuser-block-failure' );
+			return;
+		} elseif ( !$this->hasFullAccess( $this->getUser() )
+			&& $usersCount > $this->getConfig()->get( 'CheckUserMaxBlocksLimited' )
+		) {
+			$this->getOutput()->addWikiMsg( 'checkuser-block-limit' );
 			return;
 		} elseif ( $usersCount > $this->getConfig()->get( 'CheckUserMaxBlocks' ) ) {
 			$this->getOutput()->addWikiMsg( 'checkuser-block-limit' );

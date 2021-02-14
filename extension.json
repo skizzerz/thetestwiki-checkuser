@@ -1,9 +1,10 @@
 {
 	"name": "CheckUser",
-	"version": "2.5",
+	"version": "2.5-twiki.1",
 	"author": [
 		"Tim Starling",
-		"Aaron Schulz"
+		"Aaron Schulz",
+		"Ryan Schmidt"
 	],
 	"url": "https://www.mediawiki.org/wiki/Extension:CheckUser",
 	"descriptionmsg": "checkuser-desc",
@@ -29,6 +30,10 @@
 		"CheckUserMaxBlocks": {
 			"value": 200,
 			"description": "Maximum number of users that can be mass blocked simultaneously"
+		},
+		"CheckUserMaxBlocksLimited": {
+			"value": 5,
+			"description": "Maximum number of users that can be mass blocked simultaneously for users without full access"
 		},
 		"CUPublicKey": {
 			"value": "",
@@ -173,7 +178,8 @@
 	},
 	"AvailableRights": [
 		"checkuser",
-		"checkuser-log"
+		"checkuser-log",
+		"checkuser-limited"
 	],
 	"SpecialPages": {
 		"CheckUser": "SpecialCheckUser",
