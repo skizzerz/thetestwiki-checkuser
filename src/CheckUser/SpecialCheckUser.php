@@ -180,6 +180,10 @@ class SpecialCheckUser extends SpecialPage {
 		return true;
 	}
 
+	public function userCanExecute( User $user ) {
+		return $this->permissionManager->userHasAnyRight( $user, 'checkuser', 'checkuser-limited' );
+	}
+
 	/** @inheritDoc */
 	public function execute( $subPage ) {
 		$this->setHeaders();
@@ -312,11 +316,52 @@ class SpecialCheckUser extends SpecialPage {
 			}
 		}
 
+		$valid = true;
+		$cidr = false;
+		$notSelf = false;
+		if ( !$this->hasFullAccess( $this->getUser() ) ) {
+			$myIP = $this->getRequest()->getIP();
+			if ( $ip !== '' && $ip !== $myIP ) {
+				if ( !IPUtils::isValid( $ip ) ) {
+					// range
+					$cidr = true;
+				} else {
+					$notSelf = true;
+				}
+
+				$ip = '';
+			}
+
+			if ( $xff !== '' && $xff !== $myIP ) {
+				if ( !IPUtils::isValid( $xff ) ) {
+					// range
+					$cidr = true;
+				} else {
+					$notSelf = true;
+				}
+
+				$xff = '';
+			}
+
+			if ( $name !== '' && $name !== $this->getUser()->getName() ) {
+				$notSelf = true;
+				$name = '';
+			}
+
+			if ( $notSelf ) {
+				$this->getOutput()->addWikiMsg( 'checkuser-limited-notself' );
+				$valid = false;
+			} elseif ( $cidr ) {
+				$this->getOutput()->addWikiMsg( 'checkuser-limited-nocidr' );
+				$valid = false;
+			}
+		}
+
 		$this->showIntroductoryText();
 		$this->showForm( $user, $isIP );
 
 		// Perform one of the various submit operations...
-		if ( $request->wasPosted() ) {
+		if ( $request->wasPosted() && $valid ) {
 			$checkType = $this->opts->getValue( 'checktype' );
 			if ( !$this->getUser()->matchEditToken( $request->getVal( 'wpEditToken' ) ) ) {
 				$out->wrapWikiMsg( '<div class="error">$1</div>', 'checkuser-token-fail' );
@@ -375,7 +420,10 @@ class SpecialCheckUser extends SpecialPage {
 			}
 		}
 		// Add CIDR calculation convenience JS form
-		$this->addJsCIDRForm();
+		if ( $this->hasFullAccess( $this->getUser() ) ) {
+			$this->addJsCIDRForm();
+		}
+
 		$out->addModules( 'ext.checkUser' );
 		$out->addModuleStyles( [
 			'mediawiki.interface.helpers.styles',
@@ -384,15 +432,24 @@ class SpecialCheckUser extends SpecialPage {
 	}
 
 	protected function showIntroductoryText() {
-		$config = $this->getConfig();
-		$cidrLimit = $config->get( 'CheckUserCIDRLimit' );
-		$maximumRowCount = $config->get( 'CheckUserMaximumRowCount' );
-		$this->getOutput()->addWikiMsg(
-			'checkuser-summary',
-			$cidrLimit['IPv4'],
-			$cidrLimit['IPv6'],
-			Message::numParam( $maximumRowCount )
-		);
+		if ( $this->hasFullAccess( $this->getUser() ) ) {
+			$config = $this->getConfig();
+			$cidrLimit = $config->get( 'CheckUserCIDRLimit' );
+			$maximumRowCount = $config->get( 'CheckUserMaximumRowCount' );
+			$this->getOutput()->addWikiMsg(
+				'checkuser-summary',
+				$cidrLimit['IPv4'],
+				$cidrLimit['IPv6'],
+				Message::numParam( $maximumRowCount )
+			);
+		} else {
+			// limited users cannot use cidr or view the full log
+			$this->getOutput()->addWikiMsg(
+				'checkuser-summary-limited',
+				$this->getUser()->getName(),
+				$this->getRequest()->getIP()
+			);
+		}
 	}
 
 	/**
@@ -555,7 +612,12 @@ class SpecialCheckUser extends SpecialPage {
 			return;
 		}
 
-		if ( $usersCount > $this->getConfig()->get( 'CheckUserMaxBlocks' ) ) {
+		if ( !$this->hasFullAccess( $this->getUser() )
+			&& $usersCount > $this->getConfig()->get( 'CheckUserMaxBlocksLimited' )
+		) {
+			$this->getOutput()->addWikiMsg( 'checkuser-block-limit' );
+			return;
+		} elseif ( $usersCount > $this->getConfig()->get( 'CheckUserMaxBlocks' ) ) {
 			$this->getOutput()->addWikiMsg( 'checkuser-block-limit' );
 			return;
 		}
