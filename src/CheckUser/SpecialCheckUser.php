@@ -36,6 +36,7 @@ use Message;
 use OOUI\IconWidget;
 use SpecialPage;
 use Title;
+use User;
 use UserBlockedError;
 use Wikimedia\AtEase\AtEase;
 use Wikimedia\IPUtils;
@@ -182,6 +183,10 @@ class SpecialCheckUser extends SpecialPage {
 
 	public function userCanExecute( User $user ) {
 		return $this->permissionManager->userHasAnyRight( $user, 'checkuser', 'checkuser-limited' );
+	}
+
+	private function hasFullAccess( User $user ) {
+		return $this->permissionManager->userHasRight( $user, 'checkuser' );
 	}
 
 	/** @inheritDoc */
